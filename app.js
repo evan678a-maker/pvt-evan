@@ -89,6 +89,37 @@ function getCheckedThermalModelLabel(){
     : "Model A - Simple linear thermal model";
 }
 
+function normalizeSignedAngle(deg){
+  let angle = ((deg + 180) % 360 + 360) % 360 - 180;
+  return Math.abs(angle + 180) < 1e-9 ? -180 : angle;
+}
+
+function buildPvgisValidationLink({ latitude, longitude, areaM2, etaPv, tiltAngle, surfaceAzimuth }){
+  const peakPowerKw = Math.max(0, areaM2 * etaPv);
+  const pvgisAspect = normalizeSignedAngle(surfaceAzimuth - 180);
+  const lossPct = 14;
+  const params = new URLSearchParams({
+    lat: latitude.toFixed(6),
+    lon: longitude.toFixed(6),
+    peakpower: peakPowerKw.toFixed(3),
+    loss: String(lossPct),
+    angle: Number(tiltAngle).toFixed(2),
+    aspect: pvgisAspect.toFixed(2),
+    mountingplace: "free",
+    pvtechchoice: "crystSi",
+    raddatabase: "PVGIS-ERA5",
+    outputformat: "basic",
+    browser: "1"
+  });
+  return {
+    url: `https://re.jrc.ec.europa.eu/api/v5_3/PVcalc?${params.toString()}`,
+    toolUrl: "https://re.jrc.ec.europa.eu/pvg_tools/en/tools.html",
+    peakPowerKw,
+    lossPct,
+    pvgisAspect
+  };
+}
+
 function getInstalledCostBasis(){
   const pvCostPerW = getInputNumber("pvInstalledCostPerW", 1.20);
   const thermalCostPerW = getInputNumber("thermalInstalledCostPerW", 1.50);
@@ -4678,6 +4709,15 @@ async function calcAnnualPVT(){
     const tempModelText = pvTempCorrEnable
       ? `NOCT ${pvNoctC.toFixed(1)}&deg;C, &gamma;=${(pvTempCoeffPerC*100).toFixed(2)}%/&deg;C, STC reference ${PV_STC_CELL_TEMP_C}&deg;C`
       : `Temperature correction disabled; PV and PVT electricity use constant &eta;<sub>STC</sub>`;
+    const pvgisValidation = buildPvgisValidationLink({
+      latitude,
+      longitude,
+      areaM2: A,
+      etaPv,
+      tiltAngle,
+      surfaceAzimuth: azimuthAngle
+    });
+    const pvgisValidationText = `PVGIS ERA5, ${pvgisValidation.peakPowerKw.toFixed(1)} kWp, ${tiltAngle.toFixed(0)}&deg; tilt, PVGIS azimuth ${pvgisValidation.pvgisAspect.toFixed(0)}&deg;, ${pvgisValidation.lossPct}% loss`;
     let html = `
       <div class="output-card output-card-annual" style="position:relative;">
       <div class="annual-card-head">
@@ -4721,6 +4761,11 @@ async function calcAnnualPVT(){
       </div>
       <div class="annual-actions">
         <button type="button" class="detail-toggle" onclick="toggleAnnualDetails(this)" aria-expanded="false">Show detailed results</button>
+        <a class="validation-link" href="${pvgisValidation.url}" target="_blank" rel="noopener">Open PVGIS validation result</a>
+        <a class="validation-link validation-link-secondary" href="${pvgisValidation.toolUrl}" target="_blank" rel="noopener">Open PVGIS tool</a>
+        <span class="note">${pvgisValidationText}</span>
+      </div>
+      <div class="annual-actions annual-actions-subtle">
         <span class="note">Open for economics, levelised costs, and calculation detail.</span>
       </div>
       <div class="annual-detail-panel" hidden>
